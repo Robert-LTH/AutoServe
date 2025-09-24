@@ -31,6 +31,7 @@ const initialNodes: Node<FormNodeData>[] = [
           required: true,
           options: ['Aurora Industries', 'Nordic Solutions', 'Helio Labs', 'Svea Partners'],
           externalDataUrl: 'https://api.example.com/customers',
+          externalDataPath: 'options',
         },
         {
           id: 'field-quantity',
@@ -39,6 +40,7 @@ const initialNodes: Node<FormNodeData>[] = [
           required: true,
           placeholder: '0',
           externalDataUrl: 'https://api.example.com/customers',
+          externalDataPath: 'field-quantity',
         },
       ],
       outcomes: [{ id: 'outcome-to-decision', label: 'Fortsätt till val' }],

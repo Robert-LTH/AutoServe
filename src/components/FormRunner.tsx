@@ -489,6 +489,14 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
               );
             }
 
+            if (field.externalDataUrl?.trim() && field.externalDataPath?.trim()) {
+              fieldNotes.push(
+                <span key="path" className="field-inline-note">
+                  Datafält i svaret: <code>{field.externalDataPath}</code>
+                </span>
+              );
+            }
+
             if (field.type === 'select') {
               const externalOptions = isSuccessState(state) ? state.selectOptions : undefined;
               const options =

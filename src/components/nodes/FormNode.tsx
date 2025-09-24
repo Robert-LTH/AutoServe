@@ -31,6 +31,12 @@ function FormNodeComponent({ data, selected }: NodeProps<FormNodeData>) {
             {fieldsWithExternalData.map((field) => (
               <li key={field.id}>
                 {field.label}: <span>{field.externalDataUrl}</span>
+                {field.externalDataPath ? (
+                  <span>
+                    {' '}
+                    (sökväg: <code>{field.externalDataPath}</code>)
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>

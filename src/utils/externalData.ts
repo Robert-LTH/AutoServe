@@ -19,6 +19,22 @@ const demoDatasets: Record<string, unknown> = {
 };
 
 const labelKeys = ['label', 'name', 'title', 'value', 'id', 'code'];
+const identifierKeys = [
+  'fieldId',
+  'field_id',
+  'field',
+  'fieldName',
+  'field_name',
+  'targetField',
+  'target_field',
+  'target',
+  'id',
+  'name',
+  'key',
+  'code',
+  'column',
+  'property',
+];
 
 const sanitizeKey = (key: string) => key.replace(/[\s_-]+/g, '').toLowerCase();
 
@@ -206,13 +222,149 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
   const initialValues: Record<string, unknown> = {};
 
   if (Array.isArray(payload)) {
-    const options = normalizeOptions(payload);
-    if (options.length > 0) {
-      fields
-        .filter((field) => field.type === 'select')
-        .forEach((field) => {
-          selectOptions[field.id] = options;
-        });
+    type AggregatedFieldData = { initialValue?: unknown; options?: unknown[] };
+    const aggregated = new Map<string, AggregatedFieldData>();
+    let matchedByStructure = false;
+
+    const identifierKeyVariants = Array.from(
+      new Set(identifierKeys.flatMap((key) => createKeyVariants(key)))
+    );
+
+    const fieldMeta = new Map<
+      string,
+      { keyVariants: string[]; normalizedKeys: Set<string> }
+    >();
+    fields.forEach((field) => {
+      const keyVariants = [
+        ...createKeyVariants(field.id),
+        ...createKeyVariants(field.label ?? ''),
+      ];
+      const normalizedKeys = new Set(keyVariants.map((key) => sanitizeKey(key)));
+      if (field.id) {
+        normalizedKeys.add(sanitizeKey(field.id));
+      }
+      if (field.label) {
+        normalizedKeys.add(sanitizeKey(field.label));
+      }
+      fieldMeta.set(field.id, { keyVariants, normalizedKeys });
+    });
+
+    payload.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+
+      const record = entry as Record<string, unknown>;
+      const lookup = buildLookup(record);
+
+      fields.forEach((field) => {
+        const meta = fieldMeta.get(field.id);
+        if (!meta) return;
+
+        const { keyVariants, normalizedKeys } = meta;
+
+        let matchesField = Object.keys(record).some((key) =>
+          normalizedKeys.has(sanitizeKey(key))
+        );
+
+        if (!matchesField) {
+          const identifierValue = getValueFromRecord(record, lookup, identifierKeyVariants);
+          if (
+            typeof identifierValue === 'string' &&
+            normalizedKeys.has(sanitizeKey(identifierValue))
+          ) {
+            matchesField = true;
+          }
+        }
+
+        if (!matchesField) {
+          return;
+        }
+
+        matchedByStructure = true;
+
+        const aggregate = aggregated.get(field.id) ?? {};
+        aggregated.set(field.id, aggregate);
+
+        const valueKeys = [
+          ...keyVariants,
+          ...keyVariants.flatMap((variant) => [
+            `${variant}Value`,
+            `${variant}_value`,
+            `${variant}Default`,
+            `${variant}_default`,
+            `${variant}DefaultValue`,
+            `${variant}_default_value`,
+            `${variant}Initial`,
+            `${variant}_initial`,
+            `${variant}InitialValue`,
+            `${variant}_initial_value`,
+          ]),
+          'value',
+          'default',
+          'defaultValue',
+          'initial',
+          'initialValue',
+          'current',
+        ];
+
+        const rawValue = getValueFromRecord(record, lookup, valueKeys);
+
+        if (rawValue !== undefined && aggregate.initialValue === undefined) {
+          const converted = convertInitialValue(field, rawValue);
+          if (converted !== undefined) {
+            aggregate.initialValue = converted;
+          }
+        }
+
+        const optionKeys = [
+          ...keyVariants.flatMap((variant) => [
+            `${variant}Options`,
+            `${variant}_options`,
+            `${variant}Choices`,
+            `${variant}_choices`,
+            `${variant}List`,
+            `${variant}_list`,
+          ]),
+          'options',
+          'values',
+          'items',
+          'list',
+          'choices',
+        ];
+
+        let optionArray = getArrayValue(record, lookup, optionKeys);
+        if (!optionArray && Array.isArray(rawValue)) {
+          optionArray = rawValue;
+        }
+
+        if (optionArray && optionArray.length > 0) {
+          aggregate.options = [...(aggregate.options ?? []), ...optionArray];
+        }
+      });
+    });
+
+    aggregated.forEach((aggregate, fieldId) => {
+      if (aggregate.initialValue !== undefined) {
+        initialValues[fieldId] = aggregate.initialValue;
+      }
+      if (aggregate.options && aggregate.options.length > 0) {
+        const options = normalizeOptions(aggregate.options);
+        if (options.length > 0) {
+          selectOptions[fieldId] = options;
+        }
+      }
+    });
+
+    if (!matchedByStructure) {
+      const options = normalizeOptions(payload);
+      if (options.length > 0) {
+        fields
+          .filter((field) => field.type === 'select')
+          .forEach((field) => {
+            selectOptions[field.id] = options;
+          });
+      }
     }
 
     return { selectOptions, initialValues };

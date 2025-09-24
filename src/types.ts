@@ -9,6 +9,7 @@ export interface FormField {
   required: boolean;
   placeholder?: string;
   options?: string[];
+  externalDataUrl?: string;
 }
 
 export interface NodeOutcome {
@@ -22,7 +23,6 @@ export interface FormNodeData {
   description?: string;
   variant: 'form-step' | 'decision-step';
   fields: FormField[];
-  externalDataUrl?: string;
   outcomes: NodeOutcome[];
 }
 

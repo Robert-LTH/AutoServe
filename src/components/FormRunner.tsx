@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { JSX } from 'react';
 import type { Edge, Node } from 'reactflow';
 import type { FormField, FormNodeData } from '../types';
 import { loadExternalData, processExternalData } from '../utils/externalData';
@@ -11,19 +12,24 @@ interface FormRunnerProps {
 
 type OutcomeSelection = Record<string, string>;
 
-type ExternalNodeState =
-  | { status: 'idle' }
-  | { status: 'loading'; url: string }
-  | { status: 'error'; url: string; error: string }
-  | {
-      status: 'success';
-      url: string;
-      raw: unknown;
-      selectOptions: Record<string, string[]>;
-      initialValues: Record<string, unknown>;
-      appliedInitialValues: boolean;
-      isFallback: boolean;
-    };
+type LoadingExternalFieldState = { status: 'loading'; url: string };
+type ErrorExternalFieldState = { status: 'error'; url: string; error: string };
+type SuccessExternalFieldState = {
+  status: 'success';
+  url: string;
+  raw: unknown;
+  selectOptions: string[];
+  initialValue: unknown;
+  appliedInitialValue: boolean;
+  isFallback: boolean;
+};
+
+type ExternalFieldState =
+  | LoadingExternalFieldState
+  | ErrorExternalFieldState
+  | SuccessExternalFieldState;
+
+type FieldStateEntry = { field: FormField; state?: ExternalFieldState };
 
 const mapPayload = (nodes: Node<FormNodeData>[], formState: Record<string, unknown>) => {
   const payload: Record<string, unknown> = {};
@@ -39,25 +45,9 @@ const mapPayload = (nodes: Node<FormNodeData>[], formState: Record<string, unkno
   return payload;
 };
 
-const areOptionRecordsEqual = (a: Record<string, string[]>, b: Record<string, string[]>) => {
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-
-  return keysA.every((key) => {
-    const optionsA = a[key];
-    const optionsB = b[key];
-    if (!optionsB || optionsA.length !== optionsB.length) return false;
-    return optionsA.every((value, index) => value === optionsB[index]);
-  });
-};
-
-const areInitialValueRecordsEqual = (a: Record<string, unknown>, b: Record<string, unknown>) => {
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-
-  return keysA.every((key) => b[key] === a[key]);
+const areStringArraysEqual = (a: string[], b: string[]) => {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
 };
 
 const hasFilledValue = (field: FormField, value: unknown) => {
@@ -76,6 +66,15 @@ const hasFilledValue = (field: FormField, value: unknown) => {
   return true;
 };
 
+const isLoadingState = (state?: ExternalFieldState): state is LoadingExternalFieldState =>
+  state?.status === 'loading';
+
+const isErrorState = (state?: ExternalFieldState): state is ErrorExternalFieldState =>
+  state?.status === 'error';
+
+const isSuccessState = (state?: ExternalFieldState): state is SuccessExternalFieldState =>
+  state?.status === 'success';
+
 export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerProps) {
   const startNodeId = useMemo(() => {
     if (nodes.length === 0) return null;
@@ -87,9 +86,13 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
   const [trail, setTrail] = useState<string[]>(startNodeId ? [startNodeId] : []);
   const [formState, setFormState] = useState<Record<string, unknown>>({});
   const [outcomeSelection, setOutcomeSelection] = useState<OutcomeSelection>({});
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<
+    { type: 'success' | 'error'; message: string } | null
+  >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [externalStates, setExternalStates] = useState<Record<string, ExternalNodeState>>({});
+  const [externalFieldStates, setExternalFieldStates] = useState<
+    Record<string, ExternalFieldState>
+  >({});
 
   useEffect(() => {
     if (startNodeId) {
@@ -100,11 +103,11 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
       setTrail([]);
     }
     setFormState({});
+    setExternalFieldStates({});
   }, [startNodeId, nodes.length]);
 
   const activeNodeId = trail[trail.length - 1] ?? null;
   const activeNode = nodes.find((node) => node.id === activeNodeId) ?? null;
-  const activeExternalState = activeNode ? externalStates[activeNode.id] : undefined;
 
   const edgesBySource = useMemo(() => {
     const map = new Map<string, Edge[]>();
@@ -116,166 +119,229 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
     return map;
   }, [edges]);
 
-  useEffect(() => {
-    if (!activeNode) return;
+  const fieldStateEntries = useMemo<FieldStateEntry[]>(() => {
+    if (!activeNode) return [];
+    return activeNode.data.fields.map((field) => ({
+      field,
+      state: externalFieldStates[field.id],
+    }));
+  }, [activeNode, externalFieldStates]);
 
-    const url = activeNode.data.externalDataUrl?.trim();
-    if (!url) {
-      setExternalStates((current) => {
-        if (!(activeNode.id in current)) return current;
-        const { [activeNode.id]: _removed, ...rest } = current;
-        return rest;
-      });
+  useEffect(() => {
+    if (!activeNode) {
+      setExternalFieldStates({});
       return;
     }
 
-    setExternalStates((current) => {
-      const existing = current[activeNode.id];
-      if (existing && existing.status === 'success' && existing.url === url) {
-        return current;
-      }
-      if (existing && existing.status === 'loading' && existing.url === url) {
-        return current;
-      }
-      return {
-        ...current,
-        [activeNode.id]: { status: 'loading', url },
-      };
-    });
+    const activeFieldIds = new Set(activeNode.data.fields.map((field) => field.id));
 
-    const controller = new AbortController();
+    setExternalFieldStates((current) => {
+      let changed = false;
+      const next: Record<string, ExternalFieldState> = {};
 
-    (async () => {
-      try {
-        const { payload, isFallback } = await loadExternalData(url, controller.signal);
-        const processed = processExternalData(payload, activeNode.data.fields);
-        setExternalStates((current) => ({
-          ...current,
-          [activeNode.id]: {
-            status: 'success',
-            url,
-            raw: payload,
-            selectOptions: processed.selectOptions,
-            initialValues: processed.initialValues,
-            appliedInitialValues: false,
-            isFallback,
-          },
-        }));
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
+      activeFieldIds.forEach((fieldId) => {
+        const state = current[fieldId];
+        if (state) {
+          next[fieldId] = state;
         }
-        setExternalStates((current) => ({
-          ...current,
-          [activeNode.id]: {
-            status: 'error',
-            url,
-            error: error instanceof Error ? error.message : 'Kunde inte läsa extern data.',
-          },
-        }));
-      }
-    })();
+      });
 
-    return () => controller.abort();
-  }, [activeNode?.id, activeNode?.data.externalDataUrl]);
-
-  useEffect(() => {
-    if (!activeNode) return;
-
-    setExternalStates((current) => {
-      const state = current[activeNode.id];
-      if (!state || state.status !== 'success') return current;
-
-      const processed = processExternalData(state.raw, activeNode.data.fields);
-      const sameOptions = areOptionRecordsEqual(state.selectOptions, processed.selectOptions);
-      const sameInitials = areInitialValueRecordsEqual(state.initialValues, processed.initialValues);
-
-      if (sameOptions && sameInitials) {
-        return current;
+      if (Object.keys(next).length !== Object.keys(current).length) {
+        changed = true;
+      } else {
+        for (const key of Object.keys(next)) {
+          if (next[key] !== current[key]) {
+            changed = true;
+            break;
+          }
+        }
       }
 
-      return {
-        ...current,
-        [activeNode.id]: {
-          ...state,
-          selectOptions: processed.selectOptions,
-          initialValues: processed.initialValues,
-          appliedInitialValues: false,
-        },
-      };
+      return changed ? next : current;
     });
   }, [activeNode?.id, activeNode?.data.fields]);
 
   useEffect(() => {
     if (!activeNode) return;
-    if (!activeExternalState || activeExternalState.status !== 'success' || activeExternalState.appliedInitialValues) {
-      return;
-    }
 
-    const fieldIds = Object.keys(activeExternalState.initialValues);
-    if (fieldIds.length === 0) {
-      setExternalStates((current) => {
-        const state = current[activeNode.id];
-        if (!state || state.status !== 'success' || state.appliedInitialValues) return current;
+    const controllers: Record<string, AbortController> = {};
+
+    activeNode.data.fields.forEach((field) => {
+      const url = field.externalDataUrl?.trim();
+      const fieldId = field.id;
+
+      if (!url) {
+        setExternalFieldStates((current) => {
+          if (!(fieldId in current)) return current;
+          const { [fieldId]: _removed, ...rest } = current;
+          return rest;
+        });
+        return;
+      }
+
+      setExternalFieldStates((current) => {
+        const existing = current[fieldId];
+        if (existing && existing.url === url && (existing.status === 'loading' || existing.status === 'success')) {
+          return current;
+        }
         return {
           ...current,
-          [activeNode.id]: { ...state, appliedInitialValues: true },
+          [fieldId]: { status: 'loading', url },
         };
       });
-      return;
-    }
 
-    setFormState((current) => {
-      let changed = false;
-      const next = { ...current };
-      activeNode.data.fields.forEach((field) => {
-        const initial = activeExternalState.initialValues[field.id];
-        if (initial === undefined) return;
-        if (!hasFilledValue(field, current[field.id])) {
-          next[field.id] = initial;
-          changed = true;
+      const controller = new AbortController();
+      controllers[fieldId] = controller;
+
+      (async () => {
+        try {
+          const { payload, isFallback } = await loadExternalData(url, controller.signal);
+          const processed = processExternalData(payload, [field]);
+          const options = processed.selectOptions[fieldId] ?? [];
+          const initialValue = processed.initialValues[fieldId];
+
+          setExternalFieldStates((current) => {
+            const latest = current[fieldId];
+            if (latest && 'url' in latest && latest.url !== url) {
+              return current;
+            }
+
+            return {
+              ...current,
+              [fieldId]: {
+                status: 'success',
+                url,
+                raw: payload,
+                selectOptions: options,
+                initialValue,
+                appliedInitialValue: false,
+                isFallback,
+              },
+            };
+          });
+        } catch (error) {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          setExternalFieldStates((current) => ({
+            ...current,
+            [fieldId]: {
+              status: 'error',
+              url,
+              error: error instanceof Error ? error.message : 'Kunde inte läsa extern data.',
+            },
+          }));
         }
-      });
-      return changed ? next : current;
+      })();
     });
 
-    setExternalStates((current) => {
-      const state = current[activeNode.id];
-      if (!state || state.status !== 'success' || state.appliedInitialValues) return current;
-      return {
-        ...current,
-        [activeNode.id]: { ...state, appliedInitialValues: true },
-      };
-    });
-  }, [activeNode, activeExternalState, setFormState]);
+    return () => {
+      Object.values(controllers).forEach((controller) => controller.abort());
+    };
+  }, [activeNode?.id, activeNode?.data.fields]);
 
   useEffect(() => {
     if (!activeNode) return;
-    if (!activeExternalState || activeExternalState.status !== 'success') return;
 
-    const optionsByField = activeExternalState.selectOptions;
-    const hasOptions = Object.keys(optionsByField).length > 0;
-    if (!hasOptions) return;
+    setExternalFieldStates((current) => {
+      let changed = false;
+      const next: Record<string, ExternalFieldState> = { ...current };
+
+      activeNode.data.fields.forEach((field) => {
+        const state = current[field.id];
+        if (!state || state.status !== 'success') return;
+
+        const processed = processExternalData(state.raw, [field]);
+        const options = processed.selectOptions[field.id] ?? [];
+        const initialValue = processed.initialValues[field.id];
+
+        if (!areStringArraysEqual(state.selectOptions, options) || !Object.is(state.initialValue, initialValue)) {
+          next[field.id] = {
+            ...state,
+            selectOptions: options,
+            initialValue,
+            appliedInitialValue: false,
+          };
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
+  }, [activeNode?.id, activeNode?.data.fields]);
+
+  useEffect(() => {
+    if (!activeNode) return;
+
+    const fieldsToMark: string[] = [];
 
     setFormState((current) => {
       let changed = false;
       const next = { ...current };
+
+      activeNode.data.fields.forEach((field) => {
+        const state = externalFieldStates[field.id];
+        if (!isSuccessState(state) || state.appliedInitialValue) return;
+
+        fieldsToMark.push(field.id);
+
+        if (state.initialValue === undefined) {
+          return;
+        }
+
+        if (!hasFilledValue(field, current[field.id])) {
+          next[field.id] = state.initialValue;
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
+
+    if (fieldsToMark.length > 0) {
+      setExternalFieldStates((current) => {
+        let changed = false;
+        const next: Record<string, ExternalFieldState> = { ...current };
+
+        fieldsToMark.forEach((fieldId) => {
+          const state = current[fieldId];
+          if (!isSuccessState(state) || state.appliedInitialValue) return;
+          next[fieldId] = { ...state, appliedInitialValue: true };
+          changed = true;
+        });
+
+        return changed ? next : current;
+      });
+    }
+  }, [activeNode, externalFieldStates]);
+
+  useEffect(() => {
+    if (!activeNode) return;
+
+    setFormState((current) => {
+      let changed = false;
+      const next = { ...current };
+
       activeNode.data.fields.forEach((field) => {
         if (field.type !== 'select') return;
-        const options = optionsByField[field.id];
-        if (!options || options.length === 0) return;
+        const state = externalFieldStates[field.id];
+        if (!isSuccessState(state) || state.selectOptions.length === 0) return;
+
         const currentValue = current[field.id];
         if (currentValue === undefined || currentValue === null || currentValue === '') {
           return;
         }
-        if (!options.includes(String(currentValue))) {
+
+        if (!state.selectOptions.includes(String(currentValue))) {
           next[field.id] = '';
           changed = true;
         }
       });
+
       return changed ? next : current;
     });
-  }, [activeNode, activeExternalState, setFormState]);
+  }, [activeNode, externalFieldStates]);
 
   const updateFieldValue = (fieldId: string, value: unknown) => {
     setFormState((current) => ({ ...current, [fieldId]: value }));
@@ -343,6 +409,19 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
     }
   };
 
+  const loadingFields = fieldStateEntries.filter(
+    (entry): entry is { field: FormField; state: LoadingExternalFieldState } =>
+      isLoadingState(entry.state)
+  );
+  const errorFields = fieldStateEntries.filter(
+    (entry): entry is { field: FormField; state: ErrorExternalFieldState } =>
+      isErrorState(entry.state)
+  );
+  const fallbackFields = fieldStateEntries.filter(
+    (entry): entry is { field: FormField; state: SuccessExternalFieldState } =>
+      isSuccessState(entry.state) && entry.state.isFallback
+  );
+
   if (!activeNode) {
     return (
       <section className="form-runner">
@@ -363,37 +442,67 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
         <h2>{activeNode.data.title}</h2>
         {activeNode.data.description ? <p>{activeNode.data.description}</p> : null}
 
-        {activeExternalState?.status === 'loading' ? (
+        {loadingFields.length > 0 ? (
           <div className="external-data-banner info">
-            Laddar extern data från {activeExternalState.url}...
+            Laddar extern data för{' '}
+            {loadingFields.map((entry) => entry.field.label).join(', ')}...
           </div>
         ) : null}
 
-        {activeExternalState?.status === 'error' ? (
-          <div className="external-data-banner error">
-            Kunde inte hämta data från {activeExternalState.url}: {activeExternalState.error}
+        {errorFields.map(({ field, state }) => (
+          <div key={`error-${field.id}`} className="external-data-banner error">
+            {field.label}: kunde inte hämta data från {state.url}: {state.error}
           </div>
-        ) : null}
+        ))}
 
-        {activeExternalState?.status === 'success' && activeExternalState.isFallback ? (
-          <div className="external-data-banner info">
-            Använder demonstrationsdata från {activeExternalState.url} eftersom källan inte svarade.
+        {fallbackFields.map(({ field, state }) => (
+          <div key={`fallback-${field.id}`} className="external-data-banner info">
+            {field.label}: använder demonstrationsdata från {state.url} eftersom källan inte svarade.
           </div>
-        ) : null}
+        ))}
 
         <form onSubmit={handleSubmit}>
           {activeNode.data.fields.map((field) => {
             const storedValue = formState[field.id];
+            const state = externalFieldStates[field.id];
+
+            const fieldNotes: JSX.Element[] = [];
+            if (isLoadingState(state)) {
+              fieldNotes.push(
+                <span key="loading" className="field-inline-note info">
+                  Laddar data från {state.url}...
+                </span>
+              );
+            }
+            if (isErrorState(state)) {
+              fieldNotes.push(
+                <span key="error" className="field-inline-note error">
+                  Kunde inte hämta data: {state.error}
+                </span>
+              );
+            }
+            if (isSuccessState(state) && state.isFallback) {
+              fieldNotes.push(
+                <span key="fallback" className="field-inline-note info">
+                  Använder demonstrationsdata eftersom källan inte svarade.
+                </span>
+              );
+            }
 
             if (field.type === 'select') {
-              const externalOptions =
-                activeExternalState?.status === 'success' ? activeExternalState.selectOptions[field.id] : undefined;
-              const options = externalOptions && externalOptions.length > 0 ? externalOptions : field.options ?? [];
-              const value = typeof storedValue === 'string' ? storedValue : storedValue != null ? String(storedValue) : '';
+              const externalOptions = isSuccessState(state) ? state.selectOptions : undefined;
+              const options =
+                externalOptions && externalOptions.length > 0 ? externalOptions : field.options ?? [];
+              const value =
+                typeof storedValue === 'string'
+                  ? storedValue
+                  : storedValue != null
+                  ? String(storedValue)
+                  : '';
 
               return (
                 <label key={field.id}>
-                  {field.label}
+                  <span className="field-label-text">{field.label}</span>
                   <select value={value} onChange={(event) => updateFieldValue(field.id, event.target.value)}>
                     <option value="">Välj...</option>
                     {options.map((option) => (
@@ -402,6 +511,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
                       </option>
                     ))}
                   </select>
+                  {fieldNotes}
                 </label>
               );
             }
@@ -411,23 +521,27 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
 
             return (
               <label key={field.id}>
-                {field.label}
+                <span className="field-label-text">{field.label}</span>
                 <input
                   type={field.type === 'number' ? 'number' : 'text'}
                   value={value as number | string}
                   placeholder={field.placeholder}
                   onChange={(event) => {
                     const nextValue = event.target.value;
-                    updateFieldValue(field.id, field.type === 'number' ? (nextValue === '' ? '' : Number(nextValue)) : nextValue);
+                    updateFieldValue(
+                      field.id,
+                      field.type === 'number' ? (nextValue === '' ? '' : Number(nextValue)) : nextValue
+                    );
                   }}
                 />
+                {fieldNotes}
               </label>
             );
           })}
 
           {activeNode.data.outcomes.length > 1 ? (
             <label>
-              Nästa steg
+              <span className="field-label-text">Nästa steg</span>
               <select
                 value={outcomeSelection[activeNode.id] ?? activeNode.data.outcomes[0]?.id ?? ''}
                 onChange={(event) =>

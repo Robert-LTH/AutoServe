@@ -26,9 +26,10 @@ const initialNodes: Node<FormNodeData>[] = [
         {
           id: 'field-company',
           label: 'Företag',
-          type: 'text',
+          type: 'select',
           required: true,
-          placeholder: 'Organisationens namn',
+          options: ['Aurora Industries', 'Nordic Solutions', 'Helio Labs', 'Svea Partners'],
+          externalDataUrl: 'https://api.example.com/customers',
         },
         {
           id: 'field-quantity',
@@ -36,10 +37,10 @@ const initialNodes: Node<FormNodeData>[] = [
           type: 'number',
           required: true,
           placeholder: '0',
+          externalDataUrl: 'https://api.example.com/customers',
         },
       ],
       outcomes: [{ id: 'outcome-to-decision', label: 'Fortsätt till val' }],
-      externalDataUrl: 'https://api.example.com/customers',
     },
   },
   {
@@ -143,6 +144,52 @@ export default function App() {
     [selectedNodeId, updateNodeData]
   );
 
+  const handleSaveForm = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const targeted = new Set(edges.map((edge) => edge.target));
+    const startNode = nodes.find((node) => !targeted.has(node.id)) ?? nodes[0] ?? null;
+
+    const exportNodes = nodes.map(({ id, type, position, data }) => ({
+      id,
+      type,
+      position,
+      data,
+    }));
+
+    const exportEdges = edges.map(({ id, type, source, target, sourceHandle, targetHandle, data, label }) => ({
+      id,
+      type,
+      source,
+      target,
+      sourceHandle,
+      targetHandle,
+      data,
+      label,
+    }));
+
+    const timestamp = new Date().toISOString();
+    const payload = {
+      savedAt: timestamp,
+      submissionUrl,
+      startNodeId: startNode?.id ?? null,
+      nodes: exportNodes,
+      edges: exportEdges,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `autoserve-form-${timestamp.replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, [edges, nodes, submissionUrl]);
+
   return (
     <div className="app">
       <header>
@@ -198,6 +245,12 @@ export default function App() {
               <p style={{ fontSize: '0.85rem', color: '#475569', marginTop: '0.75rem' }}>
                 När en användare färdigställer flödet skickas alla insamlade fält tillsammans med fullständig steghistorik
                 som JSON till angiven adress.
+              </p>
+              <button type="button" className="save-form-button" onClick={handleSaveForm}>
+                Spara formulär
+              </button>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
+                Hämtar en JSON-fil med alla steg, fält och kopplingar så att flödet kan arkiveras eller delas.
               </p>
             </div>
           </div>

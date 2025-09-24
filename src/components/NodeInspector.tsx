@@ -94,20 +94,6 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
           }
         />
       </label>
-      <label>
-        Extern datakälla (URL)
-        <input
-          value={data.externalDataUrl ?? ''}
-          placeholder="https://..."
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              externalDataUrl: event.target.value,
-            }))
-          }
-        />
-      </label>
-
       <section className="inspector-section">
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>Formulärfält</h3>
@@ -170,6 +156,17 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
                     value={field.placeholder ?? ''}
                     onChange={(event) => updateField(field.id, { placeholder: event.target.value })}
                   />
+                </label>
+                <label style={{ gridColumn: '1 / -1' }}>
+                  Extern datakälla (URL)
+                  <input
+                    value={field.externalDataUrl ?? ''}
+                    placeholder="https://..."
+                    onChange={(event) => updateField(field.id, { externalDataUrl: event.target.value })}
+                  />
+                  <span className="field-hint">
+                    Använd en extern källa för att hämta initialvärden och eventuella listalternativ.
+                  </span>
                 </label>
                 {field.type === 'select' ? (
                   <label>

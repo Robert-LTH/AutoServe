@@ -204,6 +204,14 @@ body {
   gap: 0.5rem;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #475569;
+}
+
 .field-actions,
 .outcome-actions {
   display: flex;
@@ -278,6 +286,12 @@ button.danger:hover {
 }
 
 .form-runner form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-runner form .field-label-text {
   font-weight: 600;
 }
 
@@ -288,6 +302,22 @@ button.danger:hover {
   border-radius: 0.6rem;
   border: 1px solid #cbd5f5;
   font-size: 0.95rem;
+  width: 100%;
+}
+
+.field-inline-note {
+  display: block;
+  font-size: 0.8rem;
+  color: #475569;
+  font-weight: 400;
+}
+
+.field-inline-note.info {
+  color: #1d4ed8;
+}
+
+.field-inline-note.error {
+  color: #b91c1c;
 }
 
 .form-runner form input:focus,
@@ -386,10 +416,41 @@ button.danger:hover {
   color: #334155;
 }
 
+.form-node-external {
+  margin-top: 0.5rem;
+  background: rgba(71, 85, 105, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: #0f172a;
+}
+
+.form-node-external ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+}
+
+.form-node-external li span {
+  color: #1d4ed8;
+  word-break: break-word;
+}
+
 .form-node .fields {
   margin-top: 0.75rem;
   font-size: 0.8rem;
   color: #475569;
+}
+
+.field-chip {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .outcome-label {
@@ -429,6 +490,24 @@ button.danger:hover {
 .submission-settings h2 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
+}
+
+.save-form-button {
+  margin-top: 0.75rem;
+  width: 100%;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #4f46e5;
+  color: white;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.save-form-button:hover {
+  background: #4338ca;
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.35);
 }
 
 @media (max-width: 1100px) {

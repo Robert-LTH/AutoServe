@@ -168,6 +168,19 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
                     Använd en extern källa för att hämta initialvärden och eventuella listalternativ.
                   </span>
                 </label>
+                <label style={{ gridColumn: '1 / -1' }}>
+                  JSON-sökväg till fältets data
+                  <input
+                    value={field.externalDataPath ?? ''}
+                    placeholder="t.ex. data.items[0].value"
+                    onChange={(event) => updateField(field.id, { externalDataPath: event.target.value })}
+                    disabled={!field.externalDataUrl?.trim()}
+                  />
+                  <span className="field-hint">
+                    Beskriv var i JSON-svaret värdet eller alternativen finns, med punktnotation och hakparenteser
+                    för listor.
+                  </span>
+                </label>
                 {field.type === 'select' ? (
                   <label>
                     Alternativ (ett per rad)

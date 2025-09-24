@@ -195,6 +195,167 @@ const getArrayValue = (
   return Array.isArray(value) ? value : undefined;
 };
 
+const explicitValueKeys = [
+  'value',
+  'default',
+  'defaultValue',
+  'initial',
+  'initialValue',
+  'current',
+  'selected',
+];
+
+const pathTokenPattern = /[^.[\]]+|\[(?:-?\d+|(["'])(.*?)\1)\]/g;
+
+const parsePathSegments = (path: string): string[] => {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const normalized = trimmed.replace(/^\$+/, '');
+  const matches = normalized.match(pathTokenPattern);
+  if (!matches) {
+    return [];
+  }
+
+  return matches
+    .map((segment) => {
+      if (segment.startsWith('[') && segment.endsWith(']')) {
+        const inner = segment.slice(1, -1).trim();
+        if (inner.startsWith('"') && inner.endsWith('"')) {
+          return inner.slice(1, -1);
+        }
+        if (inner.startsWith("'") && inner.endsWith("'")) {
+          return inner.slice(1, -1);
+        }
+        return inner;
+      }
+      return segment;
+    })
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== '');
+};
+
+const resolvePathValue = (payload: unknown, path: string): unknown => {
+  const segments = parsePathSegments(path);
+  if (segments.length === 0) {
+    return undefined;
+  }
+
+  let current: unknown = payload;
+
+  for (const segment of segments) {
+    if (current == null) {
+      return undefined;
+    }
+
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      if (!Number.isInteger(index) || index < 0) {
+        return undefined;
+      }
+      current = current[index];
+      continue;
+    }
+
+    if (typeof current === 'object') {
+      const record = current as Record<string, unknown>;
+      const lookup = buildLookup(record);
+      const value = getValueFromRecord(record, lookup, [segment]);
+      if (value === undefined) {
+        return undefined;
+      }
+      current = value;
+      continue;
+    }
+
+    return undefined;
+  }
+
+  return current;
+};
+
+const applyExplicitFieldData = (
+  field: FormField,
+  value: unknown
+): { initialValue?: unknown; options?: string[] } => {
+  if (Array.isArray(value)) {
+    if (field.type === 'select') {
+      const options = normalizeOptions(value);
+      if (options.length > 0) {
+        return { options };
+      }
+    } else {
+      for (const candidate of value) {
+        const converted = convertInitialValue(field, candidate);
+        if (converted !== undefined) {
+          return { initialValue: converted };
+        }
+      }
+    }
+    return {};
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const lookup = buildLookup(record);
+    const explicitValue = getValueFromRecord(record, lookup, explicitValueKeys);
+    const convertedExplicit = convertInitialValue(field, explicitValue);
+    const result: { initialValue?: unknown; options?: string[] } = {};
+
+    if (convertedExplicit !== undefined) {
+      result.initialValue = convertedExplicit;
+    } else {
+      const fallback = convertInitialValue(field, record);
+      if (fallback !== undefined) {
+        result.initialValue = fallback;
+      }
+    }
+
+    if (field.type === 'select') {
+      const optionArray = getArrayValue(record, lookup, [
+        'options',
+        'values',
+        'items',
+        'list',
+        'choices',
+        'data',
+      ]);
+      if (optionArray && optionArray.length > 0) {
+        const options = normalizeOptions(optionArray);
+        if (options.length > 0) {
+          result.options = options;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  const converted = convertInitialValue(field, value);
+  const result: { initialValue?: unknown; options?: string[] } = {};
+
+  if (converted !== undefined) {
+    result.initialValue = converted;
+  }
+
+  if (field.type === 'select' && typeof value === 'string') {
+    const parts = value
+      .split(/[;,]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      const options = normalizeOptions(parts);
+      if (options.length > 0) {
+        result.options = options;
+      }
+    }
+  }
+
+  return result;
+};
+
 export async function loadExternalData(url: string, signal?: AbortSignal): Promise<ExternalDataFetchResult> {
   try {
     const response = await fetch(url, { signal });
@@ -220,6 +381,28 @@ export async function loadExternalData(url: string, signal?: AbortSignal): Promi
 export function processExternalData(payload: unknown, fields: FormField[]): ProcessedExternalData {
   const selectOptions: Record<string, string[]> = {};
   const initialValues: Record<string, unknown> = {};
+
+  fields.forEach((field) => {
+    const path = field.externalDataPath?.trim();
+    if (!path) {
+      return;
+    }
+
+    const scopedValue = resolvePathValue(payload, path);
+    if (scopedValue === undefined) {
+      return;
+    }
+
+    const { initialValue, options } = applyExplicitFieldData(field, scopedValue);
+
+    if (initialValue !== undefined) {
+      initialValues[field.id] = initialValue;
+    }
+
+    if (options && options.length > 0) {
+      selectOptions[field.id] = options;
+    }
+  });
 
   if (Array.isArray(payload)) {
     type AggregatedFieldData = { initialValue?: unknown; options?: unknown[] };
@@ -345,10 +528,10 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
     });
 
     aggregated.forEach((aggregate, fieldId) => {
-      if (aggregate.initialValue !== undefined) {
+      if (aggregate.initialValue !== undefined && !(fieldId in initialValues)) {
         initialValues[fieldId] = aggregate.initialValue;
       }
-      if (aggregate.options && aggregate.options.length > 0) {
+      if (aggregate.options && aggregate.options.length > 0 && !(fieldId in selectOptions)) {
         const options = normalizeOptions(aggregate.options);
         if (options.length > 0) {
           selectOptions[fieldId] = options;
@@ -360,7 +543,7 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
       const options = normalizeOptions(payload);
       if (options.length > 0) {
         fields
-          .filter((field) => field.type === 'select')
+          .filter((field) => field.type === 'select' && !(field.id in selectOptions))
           .forEach((field) => {
             selectOptions[field.id] = options;
           });
@@ -381,7 +564,7 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
 
       const rawValue = getValueFromRecord(record, lookup, keyVariants);
       const initialValue = convertInitialValue(field, rawValue);
-      if (initialValue !== undefined) {
+      if (initialValue !== undefined && !(field.id in initialValues)) {
         initialValues[field.id] = initialValue;
       }
 
@@ -399,7 +582,7 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
           optionArray = rawValue;
         }
 
-        if (optionArray) {
+        if (optionArray && !(field.id in selectOptions)) {
           const options = normalizeOptions(optionArray);
           if (options.length > 0) {
             selectOptions[field.id] = options;

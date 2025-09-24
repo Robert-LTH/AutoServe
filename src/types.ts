@@ -10,6 +10,7 @@ export interface FormField {
   placeholder?: string;
   options?: string[];
   externalDataUrl?: string;
+  externalDataPath?: string;
 }
 
 export interface NodeOutcome {

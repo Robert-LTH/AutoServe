@@ -492,6 +492,35 @@ button.danger:hover {
   font-size: 1rem;
 }
 
+.submission-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.submission-actions button {
+  width: 100%;
+}
+
+.submission-actions .save-form-button {
+  margin-top: 0;
+}
+
+.submission-feedback {
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  font-weight: 600;
+}
+
+.submission-feedback.success {
+  color: #15803d;
+}
+
+.submission-feedback.error {
+  color: #b91c1c;
+}
+
 .save-form-button {
   margin-top: 0.75rem;
   width: 100%;

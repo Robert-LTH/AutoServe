@@ -241,7 +241,12 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
           `${variant}_list`,
         ]);
 
-        const optionArray = getArrayValue(record, lookup, optionKeys) ?? genericArray;
+        let optionArray = getArrayValue(record, lookup, optionKeys) ?? genericArray;
+
+        if (!optionArray && Array.isArray(rawValue)) {
+          optionArray = rawValue;
+        }
+
         if (optionArray) {
           const options = normalizeOptions(optionArray);
           if (options.length > 0) {

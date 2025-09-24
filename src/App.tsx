@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import {
   addEdge,
   type Connection,
@@ -107,6 +108,144 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<FormNodeData>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialNodes[0]?.id ?? null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importStatus, setImportStatus] = useState<
+    { type: 'success' | 'error'; message: string } | null
+  >(null);
+
+  const handleTriggerImport = useCallback(() => {
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = '';
+    fileInputRef.current.click();
+  }, []);
+
+  const handleImportForm = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      setImportStatus(null);
+
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Filen innehåller inget formulär.');
+        }
+
+        const {
+          nodes: nodesCandidate,
+          edges: edgesCandidate,
+          submissionUrl: importedSubmissionUrl,
+          startNodeId,
+        } = parsed as {
+          nodes?: unknown;
+          edges?: unknown;
+          submissionUrl?: unknown;
+          startNodeId?: unknown;
+        };
+
+        if (!Array.isArray(nodesCandidate) || !Array.isArray(edgesCandidate)) {
+          throw new Error('Filen saknar noder eller kopplingar.');
+        }
+
+        const parseCoordinate = (value: unknown) => {
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+          }
+          if (typeof value === 'string' && value.trim() !== '') {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : 0;
+          }
+          return 0;
+        };
+
+        const sanitizedNodes = nodesCandidate.map((candidate) => {
+          if (!candidate || typeof candidate !== 'object') {
+            throw new Error('Filen innehåller en nod med ogiltigt format.');
+          }
+
+          const node = candidate as Node<FormNodeData>;
+          const data = (node as { data?: unknown }).data;
+
+          if (!data || typeof data !== 'object') {
+            throw new Error('En nod saknar data.');
+          }
+
+          const typedData = data as FormNodeData;
+          if (typeof typedData.title !== 'string') {
+            throw new Error('En nod saknar titel.');
+          }
+          if (!Array.isArray(typedData.fields) || !Array.isArray(typedData.outcomes)) {
+            throw new Error('En nod saknar fält eller utgångar.');
+          }
+
+          if (typeof node.id !== 'string') {
+            throw new Error('En nod saknar id.');
+          }
+
+          const rawPosition = (node as { position?: unknown }).position;
+          const position =
+            rawPosition && typeof rawPosition === 'object'
+              ? {
+                  x: parseCoordinate((rawPosition as { x?: unknown }).x),
+                  y: parseCoordinate((rawPosition as { y?: unknown }).y),
+                }
+              : { x: 0, y: 0 };
+
+          return {
+            ...node,
+            data: {
+              ...typedData,
+              fields: [...typedData.fields],
+              outcomes: [...typedData.outcomes],
+            },
+            position,
+          } satisfies Node<FormNodeData>;
+        });
+
+        const sanitizedEdges = edgesCandidate.map((candidate) => {
+          if (!candidate || typeof candidate !== 'object') {
+            throw new Error('Filen innehåller en koppling med ogiltigt format.');
+          }
+
+          const edge = candidate as Edge;
+          if (typeof edge.id !== 'string' || typeof edge.source !== 'string' || typeof edge.target !== 'string') {
+            throw new Error('En koppling saknar id, källa eller mål.');
+          }
+
+          return { ...edge } satisfies Edge;
+        });
+
+        setNodes(sanitizedNodes);
+        setEdges(sanitizedEdges);
+
+        const nextSubmissionUrl =
+          typeof importedSubmissionUrl === 'string' ? importedSubmissionUrl : submissionUrl;
+        setSubmissionUrl(nextSubmissionUrl);
+
+        const nodeIds = new Set(sanitizedNodes.map((node) => node.id));
+        const desiredStartId =
+          typeof startNodeId === 'string' && nodeIds.has(startNodeId)
+            ? startNodeId
+            : sanitizedNodes[0]?.id ?? null;
+        setSelectedNodeId(desiredStartId ?? null);
+
+        setImportStatus({ type: 'success', message: 'Formuläret importerades.' });
+      } catch (error) {
+        setImportStatus({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? `Formuläret kunde inte importeras: ${error.message}`
+              : 'Formuläret kunde inte importeras.',
+        });
+      }
+    },
+    [setEdges, setNodes, setSelectedNodeId, setSubmissionUrl, submissionUrl]
+  );
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -233,6 +372,13 @@ export default function App() {
             <NodeInspector node={selectedNode} onChange={handleNodeChange} />
             <div className="submission-settings">
               <h2>Inlämning</h2>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json"
+                style={{ display: 'none' }}
+                onChange={handleImportForm}
+              />
               <label style={{ display: 'block', fontWeight: 600 }}>
                 URL för beställningsmottagning
                 <input
@@ -246,11 +392,22 @@ export default function App() {
                 När en användare färdigställer flödet skickas alla insamlade fält tillsammans med fullständig steghistorik
                 som JSON till angiven adress.
               </p>
-              <button type="button" className="save-form-button" onClick={handleSaveForm}>
-                Spara formulär
-              </button>
+              <div className="submission-actions">
+                <button type="button" className="secondary" onClick={handleTriggerImport}>
+                  Importera formulär
+                </button>
+                <button type="button" className="save-form-button" onClick={handleSaveForm}>
+                  Spara formulär
+                </button>
+              </div>
+              {importStatus ? (
+                <p className={`submission-feedback ${importStatus.type}`}>
+                  {importStatus.message}
+                </p>
+              ) : null}
               <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
-                Hämtar en JSON-fil med alla steg, fält och kopplingar så att flödet kan arkiveras eller delas.
+                Exporterar flödet till JSON så att det kan arkiveras eller delas. Importera en sparad fil för att återuppta
+                arbetet.
               </p>
             </div>
           </div>

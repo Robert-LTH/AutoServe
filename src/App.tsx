@@ -332,91 +332,93 @@ export default function App() {
   }, [edges, nodes, submissionUrl]);
 
   return (
-    <div className="app">
-      <header>
-        <h1>AutoServe självserviceportal</h1>
-        <p>
-          Bygg automatiserade beställningsflöden med drag-and-drop, koppla externa datakällor och låt dina användare
-          skapa ordrar i ett guidat formulär.
-        </p>
-      </header>
+    <div className="app-wrapper">
+      <div className="app">
+        <header>
+          <h1>AutoServe självserviceportal</h1>
+          <p>
+            Bygg automatiserade beställningsflöden med drag-and-drop, koppla externa datakällor och låt dina användare
+            skapa ordrar i ett guidat formulär.
+          </p>
+        </header>
 
-      <nav className="tab-switcher">
-        <button
-          type="button"
-          className={activeTab === 'designer' ? 'active' : ''}
-          onClick={() => setActiveTab('designer')}
-        >
-          Designer
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'runner' ? 'active' : ''}
-          onClick={() => setActiveTab('runner')}
-        >
-          Formulär
-        </button>
-      </nav>
+        <nav className="tab-switcher">
+          <button
+            type="button"
+            className={activeTab === 'designer' ? 'active' : ''}
+            onClick={() => setActiveTab('designer')}
+          >
+            Designer
+          </button>
+          <button
+            type="button"
+            className={activeTab === 'runner' ? 'active' : ''}
+            onClick={() => setActiveTab('runner')}
+          >
+            Formulär
+          </button>
+        </nav>
 
-      {activeTab === 'designer' ? (
-        <div className="designer-view">
-          <NodePalette />
-          <DesignerCanvas
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            addNode={addNode}
-            onSelectNode={setSelectedNodeId}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <NodeInspector node={selectedNode} onChange={handleNodeChange} />
-            <div className="submission-settings">
-              <h2>Inlämning</h2>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json"
-                style={{ display: 'none' }}
-                onChange={handleImportForm}
-              />
-              <label style={{ display: 'block', fontWeight: 600 }}>
-                URL för beställningsmottagning
+        {activeTab === 'designer' ? (
+          <div className="designer-view">
+            <NodePalette />
+            <DesignerCanvas
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              addNode={addNode}
+              onSelectNode={setSelectedNodeId}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <NodeInspector node={selectedNode} onChange={handleNodeChange} />
+              <div className="submission-settings">
+                <h2>Inlämning</h2>
                 <input
-                  style={{ marginTop: '0.5rem' }}
-                  value={submissionUrl}
-                  placeholder="https://..."
-                  onChange={(event) => setSubmissionUrl(event.target.value)}
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json"
+                  style={{ display: 'none' }}
+                  onChange={handleImportForm}
                 />
-              </label>
-              <p style={{ fontSize: '0.85rem', color: '#475569', marginTop: '0.75rem' }}>
-                När en användare färdigställer flödet skickas alla insamlade fält tillsammans med fullständig steghistorik
-                som JSON till angiven adress.
-              </p>
-              <div className="submission-actions">
-                <button type="button" className="secondary" onClick={handleTriggerImport}>
-                  Importera formulär
-                </button>
-                <button type="button" className="save-form-button" onClick={handleSaveForm}>
-                  Spara formulär
-                </button>
-              </div>
-              {importStatus ? (
-                <p className={`submission-feedback ${importStatus.type}`}>
-                  {importStatus.message}
+                <label style={{ display: 'block', fontWeight: 600 }}>
+                  URL för beställningsmottagning
+                  <input
+                    style={{ marginTop: '0.5rem' }}
+                    value={submissionUrl}
+                    placeholder="https://..."
+                    onChange={(event) => setSubmissionUrl(event.target.value)}
+                  />
+                </label>
+                <p style={{ fontSize: '0.85rem', color: '#475569', marginTop: '0.75rem' }}>
+                  När en användare färdigställer flödet skickas alla insamlade fält tillsammans med fullständig
+                  steghistorik som JSON till angiven adress.
                 </p>
-              ) : null}
-              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
-                Exporterar flödet till JSON så att det kan arkiveras eller delas. Importera en sparad fil för att återuppta
-                arbetet.
-              </p>
+                <div className="submission-actions">
+                  <button type="button" className="secondary" onClick={handleTriggerImport}>
+                    Importera formulär
+                  </button>
+                  <button type="button" className="save-form-button" onClick={handleSaveForm}>
+                    Spara formulär
+                  </button>
+                </div>
+                {importStatus ? (
+                  <p className={`submission-feedback ${importStatus.type}`}>
+                    {importStatus.message}
+                  </p>
+                ) : null}
+                <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
+                  Exporterar flödet till JSON så att det kan arkiveras eller delas. Importera en sparad fil för att
+                  återuppta arbetet.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <FormRunner nodes={nodes} edges={edges} submissionUrl={submissionUrl} />
-      )}
+        ) : (
+          <FormRunner nodes={nodes} edges={edges} submissionUrl={submissionUrl} />
+        )}
+      </div>
     </div>
   );
 }

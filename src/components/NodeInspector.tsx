@@ -182,6 +182,21 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
                   </span>
                 </label>
                 {field.type === 'select' ? (
+                  <label style={{ gridColumn: '1 / -1' }}>
+                    JSON-sökväg till alternativens värde (value)
+                    <input
+                      value={field.externalDataValuePath ?? ''}
+                      placeholder="t.ex. data.items[].id"
+                      onChange={(event) => updateField(field.id, { externalDataValuePath: event.target.value })}
+                      disabled={!field.externalDataUrl?.trim()}
+                    />
+                    <span className="field-hint">
+                      Använd en separat sökväg för tekniska värden om listalternativen kräver ett annat värde än den
+                      synliga texten.
+                    </span>
+                  </label>
+                ) : null}
+                {field.type === 'select' ? (
                   <label>
                     Alternativ (ett per rad)
                     <textarea

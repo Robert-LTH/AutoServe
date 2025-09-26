@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import type { Edge, Node } from 'reactflow';
-import type { FormField, FormNodeData } from '../types';
+import type { FormField, FormNodeData, SelectOption } from '../types';
 import { loadExternalData, processExternalData } from '../utils/externalData';
 
 interface FormRunnerProps {
@@ -18,7 +18,7 @@ type SuccessExternalFieldState = {
   status: 'success';
   url: string;
   raw: unknown;
-  selectOptions: string[];
+  selectOptions: SelectOption[];
   initialValue: unknown;
   appliedInitialValue: boolean;
   isFallback: boolean;
@@ -45,9 +45,12 @@ const mapPayload = (nodes: Node<FormNodeData>[], formState: Record<string, unkno
   return payload;
 };
 
-const areStringArraysEqual = (a: string[], b: string[]) => {
+const areSelectOptionArraysEqual = (a: SelectOption[], b: SelectOption[]) => {
   if (a.length !== b.length) return false;
-  return a.every((value, index) => value === b[index]);
+  return a.every((option, index) => {
+    const other = b[index];
+    return other && option.value === other.value && option.label === other.label;
+  });
 };
 
 const hasFilledValue = (field: FormField, value: unknown) => {
@@ -197,7 +200,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
         try {
           const { payload, isFallback } = await loadExternalData(url, controller.signal);
           const processed = processExternalData(payload, [field]);
-          const options = processed.selectOptions[fieldId] ?? [];
+          const options = processed.selectOptions[fieldId] ?? ([] as SelectOption[]);
           const initialValue = processed.initialValues[fieldId];
 
           setExternalFieldStates((current) => {
@@ -253,10 +256,10 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
         if (!state || state.status !== 'success') return;
 
         const processed = processExternalData(state.raw, [field]);
-        const options = processed.selectOptions[field.id] ?? [];
+        const options = processed.selectOptions[field.id] ?? ([] as SelectOption[]);
         const initialValue = processed.initialValues[field.id];
 
-        if (!areStringArraysEqual(state.selectOptions, options) || !Object.is(state.initialValue, initialValue)) {
+        if (!areSelectOptionArraysEqual(state.selectOptions, options) || !Object.is(state.initialValue, initialValue)) {
           next[field.id] = {
             ...state,
             selectOptions: options,
@@ -333,7 +336,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
           return;
         }
 
-        if (!state.selectOptions.includes(String(currentValue))) {
+        if (!state.selectOptions.some((option) => option.value === String(currentValue))) {
           next[field.id] = '';
           changed = true;
         }
@@ -499,8 +502,14 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
 
             if (field.type === 'select') {
               const externalOptions = isSuccessState(state) ? state.selectOptions : undefined;
+              const fallbackOptions = (field.options ?? []).map((option) => ({
+                value: option,
+                label: option,
+              }));
               const options =
-                externalOptions && externalOptions.length > 0 ? externalOptions : field.options ?? [];
+                externalOptions && externalOptions.length > 0
+                  ? externalOptions
+                  : fallbackOptions;
               const value =
                 typeof storedValue === 'string'
                   ? storedValue
@@ -514,8 +523,8 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
                   <select value={value} onChange={(event) => updateFieldValue(field.id, event.target.value)}>
                     <option value="">Välj...</option>
                     {options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
+                      <option key={option.value} value={option.value}>
+                        {option.label}
                       </option>
                     ))}
                   </select>

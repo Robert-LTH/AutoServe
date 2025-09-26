@@ -11,6 +11,12 @@ export interface FormField {
   options?: string[];
   externalDataUrl?: string;
   externalDataPath?: string;
+  externalDataValuePath?: string;
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
 }
 
 export interface NodeOutcome {

@@ -1,4 +1,4 @@
-import type { FormField } from '../types';
+import type { FormField, SelectOption } from '../types';
 
 export interface ExternalDataFetchResult {
   payload: unknown;
@@ -6,7 +6,7 @@ export interface ExternalDataFetchResult {
 }
 
 export interface ProcessedExternalData {
-  selectOptions: Record<string, string[]>;
+  selectOptions: Record<string, SelectOption[]>;
   initialValues: Record<string, unknown>;
 }
 
@@ -36,6 +36,16 @@ const identifierKeys = [
   'property',
 ];
 
+const explicitValueKeys = [
+  'value',
+  'default',
+  'defaultValue',
+  'initial',
+  'initialValue',
+  'current',
+  'selected',
+];
+
 const sanitizeKey = (key: string) => key.replace(/[\s_-]+/g, '').toLowerCase();
 
 const createKeyVariants = (input: string) => {
@@ -61,7 +71,7 @@ const createKeyVariants = (input: string) => {
   return Array.from(variants).filter(Boolean);
 };
 
-const toOptionValue = (input: unknown): string | null => {
+const toPrimitiveString = (input: unknown): string | null => {
   if (input == null) {
     return null;
   }
@@ -70,25 +80,34 @@ const toOptionValue = (input: unknown): string | null => {
     return String(input);
   }
 
+  return null;
+};
+
+const toLabelString = (input: unknown): string | null => {
+  const primitive = toPrimitiveString(input);
+  if (primitive !== null) {
+    return primitive;
+  }
+
   if (Array.isArray(input)) {
     return null;
   }
 
-  if (typeof input === 'object') {
+  if (input && typeof input === 'object') {
+    const record = input as Record<string, unknown>;
+
     for (const key of labelKeys) {
-      const value = (input as Record<string, unknown>)[key];
-      if (value == null) continue;
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        return String(value);
+      const candidate = toPrimitiveString(record[key]);
+      if (candidate !== null) {
+        return candidate;
       }
     }
 
-    const firstKey = Object.keys(input as Record<string, unknown>)[0];
+    const firstKey = Object.keys(record)[0];
     if (firstKey) {
-      const value = (input as Record<string, unknown>)[firstKey];
-      if (value == null) return null;
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        return String(value);
+      const candidate = toPrimitiveString(record[firstKey]);
+      if (candidate !== null) {
+        return candidate;
       }
     }
   }
@@ -142,15 +161,105 @@ const getValueFromRecord = (
   return undefined;
 };
 
-const normalizeOptions = (input: unknown[]): string[] => {
+const toValueString = (input: unknown): string | null => {
+  const primitive = toPrimitiveString(input);
+  if (primitive !== null) {
+    return primitive;
+  }
+
+  if (Array.isArray(input)) {
+    return null;
+  }
+
+  if (input && typeof input === 'object') {
+    const record = input as Record<string, unknown>;
+    const lookup = buildLookup(record);
+    const explicit = getValueFromRecord(record, lookup, explicitValueKeys);
+    const explicitString = toValueString(explicit);
+    if (explicitString) {
+      return explicitString;
+    }
+
+    return toLabelString(record);
+  }
+
+  return null;
+};
+
+const normalizeOptions = (input: unknown[]): SelectOption[] => {
   const seen = new Set<string>();
-  const options: string[] = [];
-  input.forEach((item) => {
-    const candidate = toOptionValue(item);
-    if (!candidate || seen.has(candidate)) return;
-    seen.add(candidate);
-    options.push(candidate);
-  });
+  const options: SelectOption[] = [];
+
+  const visit = (item: unknown) => {
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+
+    const rawValue = toValueString(item);
+    const rawLabel = toLabelString(item);
+    const value = rawValue ?? rawLabel;
+    if (!value || seen.has(value)) {
+      return;
+    }
+
+    seen.add(value);
+    options.push({ value, label: rawLabel ?? value });
+  };
+
+  input.forEach(visit);
+  return options;
+};
+
+const flattenToArray = (input: unknown): unknown[] => {
+  if (input === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(input)) {
+    const result: unknown[] = [];
+    input.forEach((item) => {
+      result.push(...flattenToArray(item));
+    });
+    return result;
+  }
+
+  return [input];
+};
+
+const buildSelectOptions = (labels: unknown, values?: unknown): SelectOption[] => {
+  const labelCandidates = flattenToArray(labels);
+  const valueCandidates = values === undefined ? [] : flattenToArray(values);
+  const count = Math.max(labelCandidates.length, valueCandidates.length);
+
+  if (count === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const options: SelectOption[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const labelCandidate =
+      labelCandidates[index] ?? labelCandidates[labelCandidates.length - 1] ?? valueCandidates[index];
+    const valueCandidate =
+      valueCandidates[index] ?? valueCandidates[valueCandidates.length - 1] ?? labelCandidate;
+
+    let value = toValueString(valueCandidate);
+    if (!value) {
+      value = toLabelString(valueCandidate);
+    }
+
+    if (!value || seen.has(value)) {
+      continue;
+    }
+
+    const label = toLabelString(labelCandidate ?? valueCandidate) ?? value;
+
+    seen.add(value);
+    options.push({ value, label });
+  }
+
   return options;
 };
 
@@ -195,16 +304,6 @@ const getArrayValue = (
   return Array.isArray(value) ? value : undefined;
 };
 
-const explicitValueKeys = [
-  'value',
-  'default',
-  'defaultValue',
-  'initial',
-  'initialValue',
-  'current',
-  'selected',
-];
-
 const pathTokenPattern = /[^.[\]]+|\[(?:-?\d+|(["'])(.*?)\1)\]/g;
 
 const parsePathSegments = (path: string): string[] => {
@@ -229,6 +328,9 @@ const parsePathSegments = (path: string): string[] => {
         if (inner.startsWith("'") && inner.endsWith("'")) {
           return inner.slice(1, -1);
         }
+        if (inner === '') {
+          return '[]';
+        }
         return inner;
       }
       return segment;
@@ -243,43 +345,70 @@ const resolvePathValue = (payload: unknown, path: string): unknown => {
     return undefined;
   }
 
-  let current: unknown = payload;
-
-  for (const segment of segments) {
-    if (current == null) {
-      return undefined;
+  const traverse = (value: unknown, index: number): unknown => {
+    if (index >= segments.length) {
+      return value;
     }
 
-    if (Array.isArray(current)) {
-      const index = Number(segment);
-      if (!Number.isInteger(index) || index < 0) {
+    const segment = segments[index];
+
+    if (segment === '[]') {
+      if (!Array.isArray(value)) {
         return undefined;
       }
-      current = current[index];
-      continue;
+
+      const results: unknown[] = [];
+      value.forEach((item) => {
+        const resolved = traverse(item, index + 1);
+        if (resolved === undefined) {
+          return;
+        }
+        if (Array.isArray(resolved)) {
+          results.push(...resolved);
+        } else {
+          results.push(resolved);
+        }
+      });
+
+      return results.length > 0 ? results : undefined;
     }
 
-    if (typeof current === 'object') {
-      const record = current as Record<string, unknown>;
+    if (Array.isArray(value)) {
+      const numericIndex = Number(segment);
+      if (!Number.isInteger(numericIndex) || numericIndex < 0) {
+        return undefined;
+      }
+      return traverse(value[numericIndex], index + 1);
+    }
+
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
       const lookup = buildLookup(record);
-      const value = getValueFromRecord(record, lookup, [segment]);
-      if (value === undefined) {
+      const nextValue = getValueFromRecord(record, lookup, [segment]);
+      if (nextValue === undefined) {
         return undefined;
       }
-      current = value;
-      continue;
+      return traverse(nextValue, index + 1);
     }
 
     return undefined;
-  }
+  };
 
-  return current;
+  return traverse(payload, 0);
 };
 
 const applyExplicitFieldData = (
   field: FormField,
-  value: unknown
-): { initialValue?: unknown; options?: string[] } => {
+  value: unknown,
+  valueOverride?: unknown
+): { initialValue?: unknown; options?: SelectOption[] } => {
+  if (field.type === 'select' && valueOverride !== undefined) {
+    const options = buildSelectOptions(value, valueOverride);
+    if (options.length > 0) {
+      return { options };
+    }
+  }
+
   if (Array.isArray(value)) {
     if (field.type === 'select') {
       const options = normalizeOptions(value);
@@ -302,7 +431,7 @@ const applyExplicitFieldData = (
     const lookup = buildLookup(record);
     const explicitValue = getValueFromRecord(record, lookup, explicitValueKeys);
     const convertedExplicit = convertInitialValue(field, explicitValue);
-    const result: { initialValue?: unknown; options?: string[] } = {};
+    const result: { initialValue?: unknown; options?: SelectOption[] } = {};
 
     if (convertedExplicit !== undefined) {
       result.initialValue = convertedExplicit;
@@ -334,7 +463,7 @@ const applyExplicitFieldData = (
   }
 
   const converted = convertInitialValue(field, value);
-  const result: { initialValue?: unknown; options?: string[] } = {};
+  const result: { initialValue?: unknown; options?: SelectOption[] } = {};
 
   if (converted !== undefined) {
     result.initialValue = converted;
@@ -379,7 +508,7 @@ export async function loadExternalData(url: string, signal?: AbortSignal): Promi
 }
 
 export function processExternalData(payload: unknown, fields: FormField[]): ProcessedExternalData {
-  const selectOptions: Record<string, string[]> = {};
+  const selectOptions: Record<string, SelectOption[]> = {};
   const initialValues: Record<string, unknown> = {};
 
   fields.forEach((field) => {
@@ -388,12 +517,18 @@ export function processExternalData(payload: unknown, fields: FormField[]): Proc
       return;
     }
 
+    const valuePath = field.type === 'select' ? field.externalDataValuePath?.trim() : undefined;
+    const valueOverride = valuePath ? resolvePathValue(payload, valuePath) : undefined;
     const scopedValue = resolvePathValue(payload, path);
-    if (scopedValue === undefined) {
+    if (scopedValue === undefined && valueOverride === undefined) {
       return;
     }
 
-    const { initialValue, options } = applyExplicitFieldData(field, scopedValue);
+    const { initialValue, options } = applyExplicitFieldData(
+      field,
+      scopedValue ?? valueOverride,
+      valueOverride
+    );
 
     if (initialValue !== undefined) {
       initialValues[field.id] = initialValue;

@@ -108,6 +108,58 @@ body {
   font-size: 1rem;
 }
 
+.palette-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.palette-controls input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.palette-controls input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.palette-filters {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.palette-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 140px;
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+.palette-filters select {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.palette-filters select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
 .palette-item {
   background: #f1f5f9;
   padding: 0.75rem;
@@ -125,6 +177,16 @@ body {
 .palette-item strong {
   display: block;
   margin-bottom: 0.35rem;
+}
+
+.palette-empty-state {
+  margin: 0.5rem 0;
+  padding: 0.75rem;
+  background: #f1f5f9;
+  border-radius: 0.75rem;
+  color: #475569;
+  font-size: 0.85rem;
+  text-align: center;
 }
 
 .designer-canvas {

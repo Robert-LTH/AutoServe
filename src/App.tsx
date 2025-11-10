@@ -12,7 +12,7 @@ import DesignerCanvas from './components/DesignerCanvas';
 import FormRunner from './components/FormRunner';
 import NodeInspector from './components/NodeInspector';
 import NodePalette from './components/NodePalette';
-import type { FormNodeData } from './types';
+import type { FormNodeData, NodeOutcome } from './types';
 
 type StoredForm = {
   id: string;
@@ -45,19 +45,35 @@ const parseCoordinate = (value: unknown): number => {
   return 0;
 };
 
+const normalizeDefaultOutcomeId = (
+  outcomes: NodeOutcome[],
+  defaultOutcomeId?: string | null
+): string | null => {
+  if (typeof defaultOutcomeId === 'string' && outcomes.some((outcome) => outcome.id === defaultOutcomeId)) {
+    return defaultOutcomeId;
+  }
+  return outcomes[0]?.id ?? null;
+};
+
 const cloneNodes = (nodes: Node<FormNodeData>[]): Node<FormNodeData>[] =>
-  nodes.map((node) => ({
-    ...node,
-    position: node.position ? { ...node.position } : { x: 0, y: 0 },
-    data: {
-      ...node.data,
-      fields: node.data.fields.map((field) => ({
-        ...field,
-        options: Array.isArray(field.options) ? [...field.options] : undefined,
-      })),
-      outcomes: node.data.outcomes.map((outcome) => ({ ...outcome })),
-    },
-  }));
+  nodes.map((node) => {
+    const clonedFields = node.data.fields.map((field) => ({
+      ...field,
+      options: Array.isArray(field.options) ? [...field.options] : undefined,
+    }));
+    const clonedOutcomes = node.data.outcomes.map((outcome) => ({ ...outcome }));
+
+    return {
+      ...node,
+      position: node.position ? { ...node.position } : { x: 0, y: 0 },
+      data: {
+        ...node.data,
+        fields: clonedFields,
+        outcomes: clonedOutcomes,
+        defaultOutcomeId: normalizeDefaultOutcomeId(clonedOutcomes, node.data.defaultOutcomeId),
+      },
+    };
+  });
 
 const cloneEdges = (edges: Edge[]): Edge[] => edges.map((edge) => ({ ...edge }));
 
@@ -99,16 +115,20 @@ const sanitizeNodes = (nodesCandidate: unknown): Node<FormNodeData>[] => {
           }
         : { x: 0, y: 0 };
 
+    const clonedFields = typedData.fields.map((field) => ({
+      ...field,
+      options: Array.isArray(field.options) ? [...field.options] : undefined,
+    }));
+    const clonedOutcomes = typedData.outcomes.map((outcome) => ({ ...outcome }));
+
     return {
       ...node,
       position,
       data: {
         ...typedData,
-        fields: typedData.fields.map((field) => ({
-          ...field,
-          options: Array.isArray(field.options) ? [...field.options] : undefined,
-        })),
-        outcomes: typedData.outcomes.map((outcome) => ({ ...outcome })),
+        fields: clonedFields,
+        outcomes: clonedOutcomes,
+        defaultOutcomeId: normalizeDefaultOutcomeId(clonedOutcomes, typedData.defaultOutcomeId),
       },
     } satisfies Node<FormNodeData>;
   });
@@ -233,6 +253,7 @@ const initialNodes: Node<FormNodeData>[] = [
         },
       ],
       outcomes: [{ id: 'outcome-to-decision', label: 'Fortsätt till val' }],
+      defaultOutcomeId: 'outcome-to-decision',
     },
   },
   {
@@ -248,6 +269,7 @@ const initialNodes: Node<FormNodeData>[] = [
         { id: 'outcome-standard', label: 'Standardhantering' },
         { id: 'outcome-express', label: 'Expresshantering' },
       ],
+      defaultOutcomeId: 'outcome-standard',
     },
   },
   {
@@ -268,6 +290,7 @@ const initialNodes: Node<FormNodeData>[] = [
         },
       ],
       outcomes: [{ id: 'outcome-submit', label: 'Skicka beställningen' }],
+      defaultOutcomeId: 'outcome-submit',
     },
   },
 ];

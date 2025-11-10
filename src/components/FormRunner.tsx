@@ -112,6 +112,15 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
   const activeNodeId = trail[trail.length - 1] ?? null;
   const activeNode = nodes.find((node) => node.id === activeNodeId) ?? null;
 
+  const activeDefaultOutcomeId = useMemo(() => {
+    if (!activeNode) return null;
+    const candidate = activeNode.data.defaultOutcomeId;
+    if (typeof candidate === 'string' && activeNode.data.outcomes.some((outcome) => outcome.id === candidate)) {
+      return candidate;
+    }
+    return activeNode.data.outcomes[0]?.id ?? null;
+  }, [activeNode]);
+
   const edgesBySource = useMemo(() => {
     const map = new Map<string, Edge[]>();
     edges.forEach((edge) => {
@@ -129,6 +138,24 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
       state: externalFieldStates[field.id],
     }));
   }, [activeNode, externalFieldStates]);
+
+  useEffect(() => {
+    if (!activeNode) return;
+
+    setOutcomeSelection((current) => {
+      const currentSelection = current[activeNode.id];
+      if (!currentSelection) {
+        return current;
+      }
+
+      if (activeNode.data.outcomes.some((outcome) => outcome.id === currentSelection)) {
+        return current;
+      }
+
+      const { [activeNode.id]: _removed, ...rest } = current;
+      return rest;
+    });
+  }, [activeNode, setOutcomeSelection]);
 
   useEffect(() => {
     if (!activeNode) {
@@ -369,7 +396,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
       return;
     }
 
-    const selectedOutcome = outcomeSelection[activeNode.id] ?? activeNode.data.outcomes[0]?.id;
+    const selectedOutcome = outcomeSelection[activeNode.id] ?? activeDefaultOutcomeId;
     const nextEdge = selectedOutcome
       ? edgesBySource.get(activeNode.id)?.find((edge) => edge.sourceHandle === selectedOutcome)
       : undefined;
@@ -560,7 +587,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
             <label>
               <span className="field-label-text">Nästa steg</span>
               <select
-                value={outcomeSelection[activeNode.id] ?? activeNode.data.outcomes[0]?.id ?? ''}
+                value={outcomeSelection[activeNode.id] ?? activeDefaultOutcomeId ?? ''}
                 onChange={(event) =>
                   setOutcomeSelection((current) => ({ ...current, [activeNode.id]: event.target.value }))
                 }

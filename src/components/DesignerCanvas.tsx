@@ -57,6 +57,10 @@ const CanvasInner = ({
       };
 
       if (type === 'decision-step') {
+        const outcomes = [
+          { id: createId('outcome'), label: 'Ja' },
+          { id: createId('outcome'), label: 'Nej' },
+        ];
         return {
           ...base,
           data: {
@@ -64,14 +68,13 @@ const CanvasInner = ({
             description: 'Välj utfallet som ska följas.',
             variant: 'decision-step',
             fields: [],
-            outcomes: [
-              { id: createId('outcome'), label: 'Ja' },
-              { id: createId('outcome'), label: 'Nej' },
-            ],
+            outcomes,
+            defaultOutcomeId: outcomes[0]?.id ?? null,
           },
         };
       }
 
+      const outcomes = [{ id: createId('outcome'), label: 'Nästa steg' }];
       return {
         ...base,
         data: {
@@ -87,7 +90,8 @@ const CanvasInner = ({
               placeholder: 'Ange värde',
             },
           ],
-          outcomes: [{ id: createId('outcome'), label: 'Nästa steg' }],
+          outcomes,
+          defaultOutcomeId: outcomes[0]?.id ?? null,
         },
       };
     },

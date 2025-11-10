@@ -225,6 +225,19 @@ body {
   margin-top: 0.5rem;
 }
 
+.outcome-default-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.outcome-default-toggle input {
+  margin: 0;
+  accent-color: #2563eb;
+}
+
 button.secondary,
 button.danger,
 .add-button {

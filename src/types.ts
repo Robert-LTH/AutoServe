@@ -31,6 +31,7 @@ export interface FormNodeData {
   variant: 'form-step' | 'decision-step';
   fields: FormField[];
   outcomes: NodeOutcome[];
+  defaultOutcomeId?: string | null;
 }
 
 export type DesignerNode = Node<FormNodeData>;

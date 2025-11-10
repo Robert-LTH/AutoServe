@@ -27,6 +27,12 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
 
   const { data } = node;
 
+  const defaultOutcomeId =
+    typeof data.defaultOutcomeId === 'string' &&
+    data.outcomes.some((outcome) => outcome.id === data.defaultOutcomeId)
+      ? data.defaultOutcomeId
+      : data.outcomes[0]?.id ?? null;
+
   const updateField = (fieldId: string, partial: Partial<FormField>) => {
     onChange((current) => ({
       ...current,
@@ -53,17 +59,55 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
   };
 
   const addOutcome = () => {
-    onChange((current) => ({
-      ...current,
-      outcomes: [...current.outcomes, { id: createId('outcome'), label: 'Nytt utfall' }],
-    }));
+    onChange((current) => {
+      const newOutcome = { id: createId('outcome'), label: 'Nytt utfall' };
+      const outcomes = [...current.outcomes, newOutcome];
+      const nextDefault =
+        typeof current.defaultOutcomeId === 'string' &&
+        outcomes.some((item) => item.id === current.defaultOutcomeId)
+          ? current.defaultOutcomeId
+          : outcomes[0]?.id ?? null;
+
+      return {
+        ...current,
+        outcomes,
+        defaultOutcomeId: nextDefault,
+      };
+    });
   };
 
   const removeOutcome = (outcomeId: string) => {
-    onChange((current) => ({
-      ...current,
-      outcomes: current.outcomes.filter((outcome) => outcome.id !== outcomeId),
-    }));
+    onChange((current) => {
+      const outcomes = current.outcomes.filter((outcome) => outcome.id !== outcomeId);
+      const nextDefault =
+        typeof current.defaultOutcomeId === 'string' &&
+        outcomes.some((item) => item.id === current.defaultOutcomeId)
+          ? current.defaultOutcomeId
+          : outcomes[0]?.id ?? null;
+
+      return {
+        ...current,
+        outcomes,
+        defaultOutcomeId: nextDefault,
+      };
+    });
+  };
+
+  const setDefaultOutcome = (outcomeId: string) => {
+    onChange((current) => {
+      if (current.defaultOutcomeId === outcomeId) {
+        return current;
+      }
+
+      if (!current.outcomes.some((outcome) => outcome.id === outcomeId)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        defaultOutcomeId: outcomeId,
+      };
+    });
   };
 
   return (
@@ -223,6 +267,15 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
             <header>
               <span>{outcome.label}</span>
               <div className="outcome-actions">
+                <label className="outcome-default-toggle">
+                  <input
+                    type="radio"
+                    name={`default-outcome-${node.id}`}
+                    checked={defaultOutcomeId === outcome.id}
+                    onChange={() => setDefaultOutcome(outcome.id)}
+                  />
+                  Standardutfall
+                </label>
                 <button className="danger" type="button" onClick={() => removeOutcome(outcome.id)}>
                   Ta bort
                 </button>

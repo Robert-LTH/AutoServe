@@ -68,6 +68,7 @@ const CanvasInner = ({
               { id: createId('outcome'), label: 'Ja' },
               { id: createId('outcome'), label: 'Nej' },
             ],
+            authentication: { type: 'none' },
           },
         };
       }
@@ -88,6 +89,7 @@ const CanvasInner = ({
             },
           ],
           outcomes: [{ id: createId('outcome'), label: 'Nästa steg' }],
+          authentication: { type: 'none' },
         },
       };
     },

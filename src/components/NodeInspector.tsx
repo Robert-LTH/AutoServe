@@ -27,6 +27,15 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
 
   const { data } = node;
 
+  const setAuthentication = (
+    updater: (authentication: FormNodeData['authentication']) => FormNodeData['authentication']
+  ) => {
+    onChange((current) => ({
+      ...current,
+      authentication: updater(current.authentication),
+    }));
+  };
+
   const updateField = (fieldId: string, partial: Partial<FormField>) => {
     onChange((current) => ({
       ...current,
@@ -94,6 +103,118 @@ export default function NodeInspector({ node, onChange }: NodeInspectorProps) {
           }
         />
       </label>
+      <section className="inspector-section">
+        <h3 style={{ margin: 0 }}>Autentisering</h3>
+        <label>
+          Metod
+          <select
+            value={data.authentication.type}
+            onChange={(event) => {
+              const nextType = event.target.value as FormNodeData['authentication']['type'];
+              setAuthentication(() => {
+                switch (nextType) {
+                  case 'basic':
+                    return { type: 'basic', username: '', password: '' };
+                  case 'bearer':
+                    return { type: 'bearer', token: '' };
+                  case 'api-key':
+                    return { type: 'api-key', header: 'X-API-Key', value: '' };
+                  default:
+                    return { type: 'none' };
+                }
+              });
+            }}
+          >
+            <option value="none">Ingen autentisering</option>
+            <option value="bearer">Bearer-token</option>
+            <option value="basic">Basic (användarnamn/lösenord)</option>
+            <option value="api-key">API-nyckel i header</option>
+          </select>
+        </label>
+        {data.authentication.type === 'bearer' ? (
+          <label>
+            Token
+            <input
+              value={data.authentication.token}
+              onChange={(event) =>
+                setAuthentication((current) =>
+                  current.type === 'bearer'
+                    ? { ...current, token: event.target.value }
+                    : current
+                )
+              }
+              placeholder="t.ex. eyJhbGciOi..."
+            />
+          </label>
+        ) : null}
+        {data.authentication.type === 'basic' ? (
+          <div className="field-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <label>
+              Användarnamn
+              <input
+                value={data.authentication.username}
+                onChange={(event) =>
+                  setAuthentication((current) =>
+                    current.type === 'basic'
+                      ? { ...current, username: event.target.value }
+                      : current
+                  )
+                }
+                placeholder="exempelvis servicekonto"
+              />
+            </label>
+            <label>
+              Lösenord eller token
+              <input
+                value={data.authentication.password}
+                onChange={(event) =>
+                  setAuthentication((current) =>
+                    current.type === 'basic'
+                      ? { ...current, password: event.target.value }
+                      : current
+                  )
+                }
+                placeholder="ange hemligt värde"
+              />
+            </label>
+          </div>
+        ) : null}
+        {data.authentication.type === 'api-key' ? (
+          <div className="field-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <label>
+              Header-namn
+              <input
+                value={data.authentication.header}
+                onChange={(event) =>
+                  setAuthentication((current) =>
+                    current.type === 'api-key'
+                      ? { ...current, header: event.target.value }
+                      : current
+                  )
+                }
+                placeholder="t.ex. X-API-Key"
+              />
+            </label>
+            <label>
+              Värde
+              <input
+                value={data.authentication.value}
+                onChange={(event) =>
+                  setAuthentication((current) =>
+                    current.type === 'api-key'
+                      ? { ...current, value: event.target.value }
+                      : current
+                  )
+                }
+                placeholder="ange nyckel"
+              />
+            </label>
+          </div>
+        ) : null}
+        <p style={{ fontSize: '0.75rem', color: '#475569' }}>
+          Inställningen används för både externa datakällor och formulärets slutliga skickade beställning.
+        </p>
+      </section>
       <section className="inspector-section">
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>Formulärfält</h3>

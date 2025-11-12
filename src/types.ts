@@ -19,6 +19,12 @@ export interface SelectOption {
   label: string;
 }
 
+export type NodeAuthentication =
+  | { type: 'none' }
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'bearer'; token: string }
+  | { type: 'api-key'; header: string; value: string };
+
 export interface NodeOutcome {
   id: string;
   label: string;
@@ -31,6 +37,7 @@ export interface FormNodeData {
   variant: 'form-step' | 'decision-step';
   fields: FormField[];
   outcomes: NodeOutcome[];
+  authentication: NodeAuthentication;
 }
 
 export type DesignerNode = Node<FormNodeData>;

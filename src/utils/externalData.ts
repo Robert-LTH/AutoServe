@@ -1,4 +1,4 @@
-import type { FormField, SelectOption } from '../types';
+import type { FormField, NodeAuthentication, SelectOption } from '../types';
 
 export interface ExternalDataFetchResult {
   payload: unknown;
@@ -485,9 +485,92 @@ const applyExplicitFieldData = (
   return result;
 };
 
-export async function loadExternalData(url: string, signal?: AbortSignal): Promise<ExternalDataFetchResult> {
+const encodeBasicCredentials = (username: string, password: string) => {
+  const value = `${username}:${password}`;
+
+  const encodeBinary = (input: string) => {
+    if (typeof btoa === 'function') {
+      return btoa(input);
+    }
+
+    const bufferLike = (globalThis as unknown as {
+      Buffer?: { from(value: string, encoding: string): { toString(encoding: string): string } };
+    }).Buffer;
+
+    if (bufferLike) {
+      return bufferLike.from(input, 'binary').toString('base64');
+    }
+
+    throw new Error('Miljön saknar stöd för att koda uppgifter för grundläggande autentisering.');
+  };
+
+  if (typeof btoa === 'function') {
+    try {
+      return btoa(value);
+    } catch (error) {
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(value);
+      let binary = '';
+      bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+      });
+      return encodeBinary(binary);
+    }
+  }
+
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(value);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return encodeBinary(binary);
+};
+
+export const buildAuthenticatedRequestInit = (
+  authentication?: NodeAuthentication
+): Pick<RequestInit, 'headers'> => {
+  if (!authentication || authentication.type === 'none') {
+    return {};
+  }
+
+  if (authentication.type === 'bearer') {
+    const token = authentication.token.trim();
+    if (!token) {
+      return {};
+    }
+    return { headers: { Authorization: `Bearer ${token}` } };
+  }
+
+  if (authentication.type === 'basic') {
+    const username = authentication.username.trim();
+    const password = authentication.password;
+    if (!username && !password) {
+      return {};
+    }
+    const encoded = encodeBasicCredentials(username, password);
+    return { headers: { Authorization: `Basic ${encoded}` } };
+  }
+
+  if (authentication.type === 'api-key') {
+    const header = authentication.header.trim();
+    if (!header) {
+      return {};
+    }
+    return { headers: { [header]: authentication.value } };
+  }
+
+  return {};
+};
+
+export async function loadExternalData(
+  url: string,
+  signal?: AbortSignal,
+  authentication?: NodeAuthentication
+): Promise<ExternalDataFetchResult> {
   try {
-    const response = await fetch(url, { signal });
+    const authInit = buildAuthenticatedRequestInit(authentication);
+    const response = await fetch(url, { signal, ...authInit });
     if (!response.ok) {
       throw new Error(`Servern svarade med status ${response.status}`);
     }

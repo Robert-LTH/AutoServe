@@ -45,6 +45,66 @@ const parseCoordinate = (value: unknown): number => {
   return 0;
 };
 
+const cloneAuthentication = (authentication: FormNodeData['authentication']): FormNodeData['authentication'] => {
+  switch (authentication.type) {
+    case 'basic':
+      return {
+        type: 'basic',
+        username: authentication.username,
+        password: authentication.password,
+      };
+    case 'bearer':
+      return {
+        type: 'bearer',
+        token: authentication.token,
+      };
+    case 'api-key':
+      return {
+        type: 'api-key',
+        header: authentication.header,
+        value: authentication.value,
+      };
+    default:
+      return { type: 'none' };
+  }
+};
+
+const sanitizeAuthentication = (candidate: unknown): FormNodeData['authentication'] => {
+  if (!candidate || typeof candidate !== 'object') {
+    return { type: 'none' };
+  }
+
+  const typed = candidate as {
+    type?: unknown;
+    username?: unknown;
+    password?: unknown;
+    token?: unknown;
+    header?: unknown;
+    value?: unknown;
+  };
+
+  switch (typed.type) {
+    case 'basic': {
+      const username = typeof typed.username === 'string' ? typed.username : '';
+      const password = typeof typed.password === 'string' ? typed.password : '';
+      return { type: 'basic', username, password };
+    }
+    case 'bearer': {
+      const token = typeof typed.token === 'string' ? typed.token : '';
+      return { type: 'bearer', token };
+    }
+    case 'api-key': {
+      const header = typeof typed.header === 'string' && typed.header.trim() ? typed.header : 'X-API-Key';
+      const value = typeof typed.value === 'string' ? typed.value : '';
+      return { type: 'api-key', header, value };
+    }
+    case 'none':
+      return { type: 'none' };
+    default:
+      return { type: 'none' };
+  }
+};
+
 const cloneNodes = (nodes: Node<FormNodeData>[]): Node<FormNodeData>[] =>
   nodes.map((node) => ({
     ...node,
@@ -56,6 +116,7 @@ const cloneNodes = (nodes: Node<FormNodeData>[]): Node<FormNodeData>[] =>
         options: Array.isArray(field.options) ? [...field.options] : undefined,
       })),
       outcomes: node.data.outcomes.map((outcome) => ({ ...outcome })),
+      authentication: cloneAuthentication(node.data.authentication),
     },
   }));
 
@@ -99,6 +160,8 @@ const sanitizeNodes = (nodesCandidate: unknown): Node<FormNodeData>[] => {
           }
         : { x: 0, y: 0 };
 
+    const authentication = sanitizeAuthentication((typedData as { authentication?: unknown }).authentication);
+
     return {
       ...node,
       position,
@@ -109,6 +172,7 @@ const sanitizeNodes = (nodesCandidate: unknown): Node<FormNodeData>[] => {
           options: Array.isArray(field.options) ? [...field.options] : undefined,
         })),
         outcomes: typedData.outcomes.map((outcome) => ({ ...outcome })),
+        authentication,
       },
     } satisfies Node<FormNodeData>;
   });
@@ -233,6 +297,7 @@ const initialNodes: Node<FormNodeData>[] = [
         },
       ],
       outcomes: [{ id: 'outcome-to-decision', label: 'Fortsätt till val' }],
+      authentication: { type: 'none' },
     },
   },
   {
@@ -248,6 +313,7 @@ const initialNodes: Node<FormNodeData>[] = [
         { id: 'outcome-standard', label: 'Standardhantering' },
         { id: 'outcome-express', label: 'Expresshantering' },
       ],
+      authentication: { type: 'none' },
     },
   },
   {
@@ -268,6 +334,7 @@ const initialNodes: Node<FormNodeData>[] = [
         },
       ],
       outcomes: [{ id: 'outcome-submit', label: 'Skicka beställningen' }],
+      authentication: { type: 'none' },
     },
   },
 ];

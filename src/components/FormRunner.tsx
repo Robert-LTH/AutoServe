@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import type { Edge, Node } from 'reactflow';
 import type { FormField, FormNodeData, SelectOption } from '../types';
-import { loadExternalData, processExternalData } from '../utils/externalData';
+import { buildAuthenticatedRequestInit, loadExternalData, processExternalData } from '../utils/externalData';
 
 interface FormRunnerProps {
   nodes: Node<FormNodeData>[];
@@ -12,11 +12,15 @@ interface FormRunnerProps {
 
 type OutcomeSelection = Record<string, string>;
 
-type LoadingExternalFieldState = { status: 'loading'; url: string };
-type ErrorExternalFieldState = { status: 'error'; url: string; error: string };
+const createAuthSignature = (authentication: FormNodeData['authentication']) =>
+  JSON.stringify(authentication);
+
+type LoadingExternalFieldState = { status: 'loading'; url: string; authSignature: string };
+type ErrorExternalFieldState = { status: 'error'; url: string; error: string; authSignature: string };
 type SuccessExternalFieldState = {
   status: 'success';
   url: string;
+  authSignature: string;
   raw: unknown;
   selectOptions: SelectOption[];
   initialValue: unknown;
@@ -168,6 +172,8 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
     if (!activeNode) return;
 
     const controllers: Record<string, AbortController> = {};
+    const authentication = activeNode.data.authentication;
+    const authSignature = createAuthSignature(authentication);
 
     activeNode.data.fields.forEach((field) => {
       const url = field.externalDataUrl?.trim();
@@ -184,12 +190,18 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
 
       setExternalFieldStates((current) => {
         const existing = current[fieldId];
-        if (existing && existing.url === url && (existing.status === 'loading' || existing.status === 'success')) {
+        if (
+          existing &&
+          existing.url === url &&
+          'authSignature' in existing &&
+          existing.authSignature === authSignature &&
+          (existing.status === 'loading' || existing.status === 'success')
+        ) {
           return current;
         }
         return {
           ...current,
-          [fieldId]: { status: 'loading', url },
+          [fieldId]: { status: 'loading', url, authSignature },
         };
       });
 
@@ -198,14 +210,18 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
 
       (async () => {
         try {
-          const { payload, isFallback } = await loadExternalData(url, controller.signal);
+          const { payload, isFallback } = await loadExternalData(url, controller.signal, authentication);
           const processed = processExternalData(payload, [field]);
           const options = processed.selectOptions[fieldId] ?? ([] as SelectOption[]);
           const initialValue = processed.initialValues[fieldId];
 
           setExternalFieldStates((current) => {
             const latest = current[fieldId];
-            if (latest && 'url' in latest && latest.url !== url) {
+            if (
+              latest &&
+              'url' in latest &&
+              (latest.url !== url || ('authSignature' in latest && latest.authSignature !== authSignature))
+            ) {
               return current;
             }
 
@@ -214,6 +230,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
               [fieldId]: {
                 status: 'success',
                 url,
+                authSignature,
                 raw: payload,
                 selectOptions: options,
                 initialValue,
@@ -232,6 +249,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
             [fieldId]: {
               status: 'error',
               url,
+              authSignature,
               error: error instanceof Error ? error.message : 'Kunde inte läsa extern data.',
             },
           }));
@@ -242,7 +260,7 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
     return () => {
       Object.values(controllers).forEach((controller) => controller.abort());
     };
-  }, [activeNode?.id, activeNode?.data.fields]);
+  }, [activeNode?.id, activeNode?.data.fields, activeNode?.data.authentication]);
 
   useEffect(() => {
     if (!activeNode) return;
@@ -387,9 +405,16 @@ export default function FormRunner({ nodes, edges, submissionUrl }: FormRunnerPr
     setIsSubmitting(true);
     try {
       const payload = mapPayload(nodes, formState);
+      const authInit = buildAuthenticatedRequestInit(activeNode.data.authentication);
+      const headers: Record<string, string> = {
+        ...(authInit.headers as Record<string, string> | undefined),
+      };
+      headers['Content-Type'] = 'application/json';
+
       const response = await fetch(submissionUrl, {
+        ...authInit,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           flowId: startNodeId ?? 'flow',
           payload,
